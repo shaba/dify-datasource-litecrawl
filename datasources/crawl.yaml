@@ -1,0 +1,115 @@
+identity:
+  author: shaba
+  name: crawl
+  label:
+    en_US: Crawl docs site
+    ru_RU: Обход докосайта
+description:
+  en_US: Crawl a static documentation site and extract clean markdown per page.
+  ru_RU: Обойти статический докосайт и извлечь чистый markdown по страницам.
+parameters:
+  - name: url
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Start URL
+      ru_RU: Стартовый URL
+    description:
+      en_US: Documentation site URL (or base domain for auto-discovery).
+      ru_RU: URL докосайта (или базовый домен для авто-discovery).
+  - name: discover
+    type: boolean
+    required: false
+    form: form
+    default: true
+    label:
+      en_US: Auto-discover docs root
+      ru_RU: Авто-поиск раздела доки
+    description:
+      en_US: If a bare domain is given, probe common docs paths (e.g. /docs/).
+      ru_RU: Если задан голый домен — пробовать типовые пути (напр. /docs/).
+  - name: path_prefix
+    type: string
+    required: false
+    form: form
+    label:
+      en_US: Path prefix to stay within
+      ru_RU: Префикс пути (ограничение)
+    description:
+      en_US: 'Restrict crawl to this path, e.g. /docs/. Empty = start URL directory.'
+      ru_RU: 'Ограничить обход этим путём, напр. /docs/. Пусто = каталог старта.'
+  - name: strategy
+    type: string
+    required: false
+    form: form
+    default: auto
+    label:
+      en_US: Crawl strategy
+      ru_RU: Стратегия обхода
+    description:
+      en_US: 'auto (detect MediaWiki/sitemap/links), html (sitemap+BFS), or mediawiki (api.php allpages)'
+      ru_RU: 'auto (детект MediaWiki/sitemap/ссылки), html (sitemap+BFS), mediawiki (api.php allpages)'
+  - name: include_paths
+    type: string
+    required: false
+    form: form
+    label:
+      en_US: Include path patterns
+      ru_RU: Включать пути (паттерны)
+    description:
+      en_US: 'Only crawl paths matching these glob patterns (comma-separated), e.g. docs/*, start/*'
+      ru_RU: 'Обходить только пути по этим glob-паттернам (через запятую), напр. docs/*, start/*'
+  - name: exclude_paths
+    type: string
+    required: false
+    form: form
+    label:
+      en_US: Exclude path patterns
+      ru_RU: Исключать пути (паттерны)
+    description:
+      en_US: 'Skip paths matching these glob patterns (comma-separated), e.g. blog/*, changelog/*'
+      ru_RU: 'Пропускать пути по этим glob-паттернам (через запятую), напр. blog/*, changelog/*'
+  - name: max_pages
+    type: number
+    required: false
+    form: form
+    default: 50
+    min: 1
+    label:
+      en_US: Max pages
+      ru_RU: Максимум страниц
+    description:
+      en_US: Stop after crawling this many pages.
+      ru_RU: Остановиться после стольких страниц.
+  - name: max_depth
+    type: number
+    required: false
+    form: form
+    default: 5
+    min: 0
+    label:
+      en_US: Max crawl depth
+      ru_RU: Максимальная глубина
+    description:
+      en_US: Link-follow depth from the start URL.
+      ru_RU: Глубина перехода по ссылкам от старта.
+output_schema:
+  type: object
+  properties:
+    source_url:
+      type: string
+      description: the source url of the page
+    content:
+      type: string
+      description: the extracted markdown content
+    title:
+      type: string
+      description: the page title
+    description:
+      type: string
+      description: the page description
+provider_type: website_crawl
+extra:
+  python:
+    source: datasources/crawl.py

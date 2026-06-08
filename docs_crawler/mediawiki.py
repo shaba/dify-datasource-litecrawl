@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+import json
+from urllib.parse import quote, urlencode, urlparse
+
+from .http import Fetch, default_fetch
+
+
+def derive_api(base_url: str) -> str:
+    """Resolve the MediaWiki api.php endpoint from a wiki URL."""
+    parsed = urlparse(base_url)
+    if parsed.path.rstrip("/").endswith("api.php"):
+        return base_url.split("?")[0]
+    return f"{parsed.scheme}://{parsed.netloc}/api.php"
+
+
+def _api_get(api_url: str, params: dict, *, fetch: Fetch, timeout: int) -> dict:
+    sep = "&" if "?" in api_url else "?"
+    status, _content_type, text = fetch(f"{api_url}{sep}{urlencode(params)}", timeout)
+    if not (200 <= status < 300):
+        raise ValueError(f"MediaWiki API returned {status}")
+    return json.loads(text)
+
+
+def siteinfo(api_url: str, *, fetch: Fetch = default_fetch, timeout: int = 20) -> dict:
+    data = _api_get(
+        api_url,
+        {"action": "query", "meta": "siteinfo", "siprop": "general", "format": "json"},
+        fetch=fetch,
+        timeout=timeout,
+    )
+    general = data.get("query", {}).get("general", {})
+    return {
+        "generator": str(general.get("generator") or ""),
+        "server": str(general.get("server") or ""),
+        "articlepath": str(general.get("articlepath") or "/$1"),
+    }
+
+
+def is_mediawiki(base_url: str, *, fetch: Fetch = default_fetch, timeout: int = 20) -> bool:
+    try:
+        info = siteinfo(derive_api(base_url), fetch=fetch, timeout=timeout)
+    except Exception:  # noqa: BLE001
+        return False
+    return "mediawiki" in info["generator"].lower()
+
+
+def list_all_pages(
+    api_url: str,
+    *,
+    fetch: Fetch = default_fetch,
+    namespace: int = 0,
+    page_size: int = 500,
+    max_pages: int = 1000,
+    timeout: int = 20,
+) -> list[str]:
+    """Return page titles via action=query&list=allpages, following apcontinue."""
+    titles: list[str] = []
+    apcontinue: str | None = None
+    while len(titles) < max_pages:
+        params: dict = {
+            "action": "query",
+            "list": "allpages",
+            "apnamespace": namespace,
+            "aplimit": min(page_size, max_pages - len(titles)),
+            "format": "json",
+        }
+        if apcontinue:
+            params["apcontinue"] = apcontinue
+        data = _api_get(api_url, params, fetch=fetch, timeout=timeout)
+        pages = data.get("query", {}).get("allpages", [])
+        titles.extend(str(p["title"]) for p in pages if "title" in p)
+        apcontinue = (data.get("continue") or {}).get("apcontinue")
+        if not apcontinue or not pages:
+            break
+    return titles[:max_pages]
+
+
+def page_url(server: str, articlepath: str, title: str) -> str:
+    encoded = quote(title.replace(" ", "_"), safe="/:")
+    return server.rstrip("/") + articlepath.replace("$1", encoded)
+
+
+def fetch_page_html(api_url: str, title: str, *, fetch: Fetch = default_fetch, timeout: int = 20) -> str:
+    """Return the rendered article HTML via action=parse (clean, no site chrome)."""
+    data = _api_get(
+        api_url,
+        {"action": "parse", "page": title, "prop": "text", "formatversion": 2, "format": "json"},
+        fetch=fetch,
+        timeout=timeout,
+    )
+    text = data.get("parse", {}).get("text")
+    if isinstance(text, dict):  # formatversion=1 returns {"*": html}
+        text = text.get("*", "")
+    return str(text or "")
+
+
+_NOISE_CLASSES = ("mw-editsection", "infobox", "navbox", "metadata", "noprint",
+                  "mw-empty-elt", "toc", "mw-jump-link", "printfooter")
+
+
+def html_to_markdown(fragment_html: str) -> str:
+    """Clean MediaWiki article HTML (action=parse) and convert to markdown.
+
+    Removes edit-section links, infoboxes, navboxes, TOC, styles/scripts, then
+    converts with markdownify (links/images flattened). Better than trafilatura
+    for MediaWiki fragments.
+    """
+    import re
+
+    from bs4 import BeautifulSoup
+    from markdownify import markdownify
+
+    soup = BeautifulSoup(fragment_html or "", "html.parser")
+    for tag in soup.find_all(["style", "script"]):
+        tag.decompose()
+    for el in soup.find_all(
+        lambda t: t.has_attr("class") and any(n in " ".join(t.get("class", [])) for n in _NOISE_CLASSES)
+    ):
+        el.decompose()
+    markdown = markdownify(str(soup), heading_style="ATX", strip=["a", "img"])
+    return re.sub(r"\n{3,}", "\n\n", markdown).strip()

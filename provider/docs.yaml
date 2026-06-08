@@ -1,0 +1,25 @@
+identity:
+  author: shaba
+  name: litecrawl
+  label:
+    en_US: Litecrawl
+    ru_RU: Litecrawl
+  description:
+    en_US: Crawl static documentation sites and extract clean markdown (Trafilatura)
+    ru_RU: Обход статических докосайтов и извлечение чистого markdown (Trafilatura)
+  icon: icon.svg
+credentials_schema:
+  - name: user_agent
+    type: text-input
+    required: false
+    label:
+      en_US: User-Agent (optional)
+      ru_RU: User-Agent (опц.)
+    placeholder:
+      en_US: custom User-Agent header
+provider_type: website_crawl
+datasources:
+  - datasources/crawl.yaml
+extra:
+  python:
+    source: provider/docs.py
