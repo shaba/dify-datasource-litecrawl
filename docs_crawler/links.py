@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import re
 from fnmatch import fnmatch
+from html import unescape
 from urllib.parse import urljoin, urlparse
 
-_HREF = re.compile(r"""href=["']([^"'#]+)""", re.IGNORECASE)
+# Match both quoted (href="...") and unquoted (href=...) attribute forms.
+_HREF = re.compile(r"""href=(?:["']([^"'#]+)|([^"'\s>#]+))""", re.IGNORECASE)
 _ASSET = re.compile(r"\.(png|jpe?g|gif|svg|css|js|ico|woff2?|ttf|zip|tar|gz|pdf|xml|json)$", re.I)
 
 
 def extract_links(html: str, base_url: str) -> set[str]:
     out: set[str] = set()
-    for href in _HREF.findall(html or ""):
+    for quoted, unquoted in _HREF.findall(html or ""):
+        href = unescape(quoted or unquoted).strip()  # decode &amp; etc., trim padding whitespace
+        if not href:
+            continue
         url = urljoin(base_url, href).split("#")[0]
         if url.startswith(("http://", "https://")):
             out.add(url)
