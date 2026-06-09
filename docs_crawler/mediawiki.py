@@ -70,9 +70,12 @@ def siteinfo(api_url: str, *, fetch: Fetch = default_fetch, timeout: int = 20) -
         timeout=timeout,
     )
     general = data.get("query", {}).get("general", {})
+    server = str(general.get("server") or "")
+    if server.startswith("//"):  # protocol-relative $wgServer default
+        server = f"{urlparse(api_url).scheme}:{server}"
     return {
         "generator": str(general.get("generator") or ""),
-        "server": str(general.get("server") or ""),
+        "server": server,
         "articlepath": str(general.get("articlepath") or "/$1"),
     }
 

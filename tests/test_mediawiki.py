@@ -70,6 +70,16 @@ def test_derive_api_falls_back_to_root_without_edituri():
         "https://wiki.example.com/api.php"
 
 
+def test_siteinfo_normalizes_protocol_relative_server():
+    fetch = make_fetch([("siteinfo", {"query": {"general": {
+        "generator": "MediaWiki 1.41",
+        "server": "//wiki.example.com",  # $wgServer protocol-relative default
+        "articlepath": "/wiki/$1",
+    }}})])
+    info = siteinfo("https://wiki.example.com/w/api.php", fetch=fetch)
+    assert info["server"] == "https://wiki.example.com"
+
+
 def test_siteinfo_and_is_mediawiki():
     fetch = make_fetch([("siteinfo", SITEINFO)])
     info = siteinfo("https://wiki.example.com/api.php", fetch=fetch)
