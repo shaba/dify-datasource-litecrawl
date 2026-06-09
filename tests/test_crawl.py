@@ -1,4 +1,4 @@
-from docs_crawler.crawl import crawl
+from docs_crawler.crawl import crawl, default_path_prefix
 
 SITE = {
     "https://h.example/docs/": '<a href="/docs/a/">a</a> <a href="/docs/b/">b</a> <a href="/out/">o</a>',
@@ -32,6 +32,13 @@ def test_crawl_in_scope_and_collects_pages():
 def test_crawl_respects_max_pages():
     pages = crawl("https://h.example/docs/", extract=extract, fetch=fetch, max_pages=2)
     assert len(pages) == 2
+
+
+def test_default_path_prefix_directory_vs_page():
+    # page-style start URL scopes to its parent directory (shared by sitemap + BFS)
+    assert default_path_prefix("https://h.example/docs/intro") == "/docs/"
+    assert default_path_prefix("https://h.example/docs/") == "/docs/"
+    assert default_path_prefix("https://h.example") == "/"
 
 
 def test_crawl_dedups_trailing_slash_variants():

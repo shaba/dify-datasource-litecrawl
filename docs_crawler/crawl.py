@@ -20,9 +20,17 @@ class Page:
     content: str
 
 
-def _default_prefix(start_url: str) -> str:
+def default_path_prefix(start_url: str) -> str:
+    """Scope prefix for a start URL: its path if it ends in '/', else the parent
+    directory (e.g. /docs/intro -> /docs/). Shared by the BFS crawl and the
+    sitemap pre-filter so both strategies scope identically.
+    """
     path = urlparse(start_url).path or "/"
     return path if path.endswith("/") else path.rsplit("/", 1)[0] + "/"
+
+
+# Backwards-compatible private alias.
+_default_prefix = default_path_prefix
 
 
 def crawl(
