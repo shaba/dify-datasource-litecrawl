@@ -11,7 +11,6 @@ parameters:
   - name: url
     type: string
     required: true
-    form: llm
     label:
       en_US: Start URL
       ru_RU: Стартовый URL
@@ -21,7 +20,6 @@ parameters:
   - name: discover
     type: boolean
     required: false
-    form: form
     default: true
     label:
       en_US: Auto-discover docs root
@@ -32,7 +30,6 @@ parameters:
   - name: path_prefix
     type: string
     required: false
-    form: form
     label:
       en_US: Path prefix to stay within
       ru_RU: Префикс пути (ограничение)
@@ -40,10 +37,22 @@ parameters:
       en_US: 'Restrict crawl to this path, e.g. /docs/. Empty = start URL directory.'
       ru_RU: 'Ограничить обход этим путём, напр. /docs/. Пусто = каталог старта.'
   - name: strategy
-    type: string
+    type: select
     required: false
-    form: form
     default: auto
+    options:
+      - value: auto
+        label:
+          en_US: Auto-detect
+          ru_RU: Авто-детект
+      - value: html
+        label:
+          en_US: HTML (sitemap + BFS)
+          ru_RU: HTML (sitemap + BFS)
+      - value: mediawiki
+        label:
+          en_US: MediaWiki API
+          ru_RU: MediaWiki API
     label:
       en_US: Crawl strategy
       ru_RU: Стратегия обхода
@@ -53,7 +62,6 @@ parameters:
   - name: include_paths
     type: string
     required: false
-    form: form
     label:
       en_US: Include path patterns
       ru_RU: Включать пути (паттерны)
@@ -63,7 +71,6 @@ parameters:
   - name: exclude_paths
     type: string
     required: false
-    form: form
     label:
       en_US: Exclude path patterns
       ru_RU: Исключать пути (паттерны)
@@ -73,7 +80,6 @@ parameters:
   - name: max_pages
     type: number
     required: false
-    form: form
     default: 50
     min: 1
     label:
@@ -85,7 +91,6 @@ parameters:
   - name: max_depth
     type: number
     required: false
-    form: form
     default: 5
     min: 0
     label:
