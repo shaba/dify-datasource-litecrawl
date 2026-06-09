@@ -2,14 +2,31 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
 
 import requests
 
-DEFAULT_UA = (
-    "docs-crawler/0.0.1 (+https://example.com/docs-crawler)"
-)
+
+def _manifest_version() -> str:
+    """Read the plugin version from manifest.yaml so the UA never drifts.
+
+    Falls back to "0" if the manifest is missing (e.g. core package used
+    standalone in tests). Avoids a YAML dependency: scans for the top-level
+    ``version:`` line.
+    """
+    manifest = Path(__file__).resolve().parent.parent / "manifest.yaml"
+    try:
+        for line in manifest.read_text(encoding="utf-8").splitlines():
+            if line.startswith("version:"):
+                return line.split(":", 1)[1].strip().strip("\"'")
+    except OSError:
+        pass
+    return "0"
+
+
+DEFAULT_UA = f"litecrawl/{_manifest_version()} (+https://github.com/shaba/dify-datasource-litecrawl)"
 
 # Fetch: (url, timeout) -> (status_code, content_type, text)
 Fetch = Callable[[str, int], "tuple[int, str, str]"]
