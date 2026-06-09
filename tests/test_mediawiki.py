@@ -70,6 +70,15 @@ def test_derive_api_falls_back_to_root_without_edituri():
         "https://wiki.example.com/api.php"
 
 
+def test_is_mediawiki_negative_for_non_wiki_generator():
+    fetch = make_fetch([("siteinfo", {"query": {"general": {
+        "generator": "WordPress 6.4",
+        "server": "https://blog.example.com",
+        "articlepath": "/$1",
+    }}})])
+    assert not is_mediawiki("https://blog.example.com", fetch=fetch)
+
+
 def test_siteinfo_normalizes_protocol_relative_server():
     fetch = make_fetch([("siteinfo", {"query": {"general": {
         "generator": "MediaWiki 1.41",
@@ -129,3 +138,15 @@ def test_html_to_markdown_cleans_mediawiki():
     assert "**body**" in md
     assert "link" in md  # link text kept, href stripped
     assert "## Heading" in md
+
+
+def test_html_to_markdown_noise_class_is_exact_not_substring():
+    from docs_crawler.mediawiki import html_to_markdown
+    # 'infoboxer' / 'mytoc' contain noise tokens as substrings but must NOT be removed.
+    frag = ('<div class="mw-parser-output">'
+            '<div class="infoboxer">keepme</div>'
+            '<table class="infobox"><tr><td>drop</td></tr></table>'
+            '</div>')
+    md = html_to_markdown(frag)
+    assert "keepme" in md
+    assert "drop" not in md
