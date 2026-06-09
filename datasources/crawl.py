@@ -8,15 +8,15 @@ from dify_plugin.entities.datasource import (
 )
 from dify_plugin.interfaces.datasource.website import WebsiteCrawlDatasource
 
-from docs_crawler.crawl import Page, crawl, extract_urls
+from docs_crawler.crawl import Page, crawl, default_path_prefix, extract_urls
 from docs_crawler.discover import find_docs_root, find_sitemap_urls
 from docs_crawler.extract import extract_page
 from docs_crawler.links import in_scope
 from docs_crawler.mediawiki import (
     derive_api,
+    detect_mediawiki,
     fetch_page_html,
     html_to_markdown,
-    is_mediawiki,
     list_all_pages,
     page_url,
     siteinfo,
@@ -54,21 +54,50 @@ class DocsCrawlDatasource(WebsiteCrawlDatasource):
         crawl_res = WebSiteInfo(web_info_list=[], status="processing", total=0, completed=0)
         yield self.create_crawl_message(crawl_res)
 
-        use_mediawiki = strategy == "mediawiki" or (
-            strategy == "auto" and is_mediawiki(url, fetch=fetch)
-        )
+        # Resolve api_url + siteinfo once. In auto mode detect_mediawiki reuses the
+        # same probe; in explicit mediawiki mode we fetch siteinfo directly.
+        api_info: tuple[str, dict] | None = None
+        if strategy == "auto":
+            api_info = detect_mediawiki(url, fetch=fetch)
+        elif strategy == "mediawiki":
+            # Explicit strategy: a misconfiguration must surface, not silently
+            # degrade to an HTML crawl. Fail hard if the target is not a MediaWiki.
+            try:
+                api_url = derive_api(url, fetch=fetch)
+                info = siteinfo(api_url, fetch=fetch)
+            except Exception as exc:  # noqa: BLE001
+                raise ValueError(
+                    f"strategy=mediawiki but {url!r} does not expose a working "
+                    f"MediaWiki API: {exc}"
+                ) from exc
+            if "mediawiki" not in info["generator"].lower():
+                raise ValueError(
+                    f"strategy=mediawiki but {url!r} is not a MediaWiki "
+                    f"(generator={info['generator']!r})"
+                )
+            api_info = (api_url, info)
 
-        if use_mediawiki:
-            api_url = derive_api(url)
-            info = siteinfo(api_url, fetch=fetch)
-            host = urlparse(info["server"] or url).netloc
-            titles = list_all_pages(api_url, fetch=fetch, max_pages=max_pages)
+        if api_info is not None:
+            api_url, info = api_info
+            # $wgServer can be unset/blank on real installs; fall back to the
+            # api.php origin so page URLs are absolute and host-scoping works.
+            api_parsed = urlparse(api_url)
+            server = info["server"] or f"{api_parsed.scheme}://{api_parsed.netloc}"
+            host = urlparse(server).netloc
+            try:
+                titles = list_all_pages(api_url, fetch=fetch, max_pages=max_pages)
+            except Exception:  # noqa: BLE001 - emit whatever we have, don't abort mid-stream
+                titles = []
             pages = []
             for title in titles:
                 if len(pages) >= max_pages:
                     break
-                url_for_title = page_url(info["server"], info["articlepath"], title)
-                if not in_scope(url_for_title, host, None, include=include, exclude=exclude):
+                url_for_title = page_url(server, info["articlepath"], title)
+                # path_prefix restricts the wiki crawl too; titles are not asset files.
+                if not in_scope(
+                    url_for_title, host, path_prefix,
+                    include=include, exclude=exclude, skip_assets=False,
+                ):
                     continue
                 try:
                     html = fetch_page_html(api_url, title, fetch=fetch)
@@ -85,7 +114,10 @@ class DocsCrawlDatasource(WebsiteCrawlDatasource):
         else:
             start_url = find_docs_root(url, fetch=fetch) if discover else url
             host = urlparse(start_url).netloc
-            scope = path_prefix or (urlparse(start_url).path or "/")
+            # Use the same directory-normalized scope as the BFS fallback so a
+            # page-style start URL (e.g. /docs/intro) scopes to /docs/, not to the
+            # literal page path (which would filter out nearly every sitemap entry).
+            scope = path_prefix or default_path_prefix(start_url)
             sitemap = [
                 u for u in find_sitemap_urls(start_url, fetch=fetch)
                 if in_scope(u, host, scope, include=include, exclude=exclude)

@@ -7,6 +7,7 @@ from docs_crawler.mediawiki import (
     page_url,
     siteinfo,
 )
+from urllib.parse import urlparse
 
 SITEINFO = {"query": {"general": {"generator": "MediaWiki 1.38.2",
                                   "server": "https://wiki.example.com",
@@ -62,12 +63,19 @@ def test_derive_api_edituri_attribute_order_independent():
         "https://en.wikipedia.org/w/api.php"
 
 
-def test_derive_api_falls_back_to_root_without_edituri():
-    def fetch(url, timeout=20):
-        return 200, "text/html", "<html><head></head><body>no rsd</body></html>"
+def test_empty_server_url_building_yields_absolute_in_scope_url():
+    # Real installs may leave $wgServer blank; the datasource derives the origin
+    # from api.php. Verify the resulting page URL is absolute and host-matchable.
+    from docs_crawler.links import in_scope
 
-    assert derive_api("https://wiki.example.com/wiki/Apt", fetch=fetch) == \
-        "https://wiki.example.com/api.php"
+    api_url = "https://wiki.example.com/w/api.php"
+    info = {"server": "", "articlepath": "/wiki/$1"}
+    ap = urlparse(api_url)
+    server = info["server"] or f"{ap.scheme}://{ap.netloc}"
+    host = urlparse(server).netloc
+    url_for_title = page_url(server, info["articlepath"], "Apt")
+    assert url_for_title == "https://wiki.example.com/wiki/Apt"
+    assert in_scope(url_for_title, host, None, skip_assets=False)
 
 
 def test_is_mediawiki_negative_for_non_wiki_generator():
@@ -77,6 +85,14 @@ def test_is_mediawiki_negative_for_non_wiki_generator():
         "articlepath": "/$1",
     }}})])
     assert not is_mediawiki("https://blog.example.com", fetch=fetch)
+
+
+def test_derive_api_falls_back_to_root_without_edituri():
+    def fetch(url, timeout=20):
+        return 200, "text/html", "<html><head></head><body>no rsd</body></html>"
+
+    assert derive_api("https://wiki.example.com/wiki/Apt", fetch=fetch) == \
+        "https://wiki.example.com/api.php"
 
 
 def test_siteinfo_normalizes_protocol_relative_server():
