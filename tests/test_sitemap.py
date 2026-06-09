@@ -23,6 +23,29 @@ def test_find_sitemap_urls_direct():
     assert urls == ["https://h.example/docs/a/", "https://h.example/docs/b/"]
 
 
+def test_find_sitemap_via_robots_txt():
+    def fetch(url, timeout=20):
+        if url.endswith("/robots.txt"):
+            return 200, "text/plain", "User-agent: *\nSitemap: https://h.example/custom-sitemap.xml\n"
+        if url.endswith("/custom-sitemap.xml"):
+            return 200, "application/xml", SITEMAP
+        return 404, "text/html", ""
+    urls = find_sitemap_urls("https://h.example/docs/", fetch=fetch)
+    assert urls == ["https://h.example/docs/a/", "https://h.example/docs/b/"]
+
+
+def test_find_sitemap_accepts_text_plain_xml_body():
+    # Server serves XML as text/plain; content-sniffing should still accept it.
+    def fetch(url, timeout=20):
+        if url.endswith("/robots.txt"):
+            return 404, "text/plain", ""
+        if url.endswith("/sitemap.xml"):
+            return 200, "text/plain", SITEMAP
+        return 404, "text/html", ""
+    urls = find_sitemap_urls("https://h.example/docs/", fetch=fetch)
+    assert "https://h.example/docs/a/" in urls
+
+
 def test_find_sitemap_index_expands():
     def fetch(url, timeout=20):
         if url.endswith("/sitemap.xml"):
