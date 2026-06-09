@@ -30,6 +30,46 @@ def test_derive_api():
     assert derive_api("https://wiki.example.com/api.php") == "https://wiki.example.com/api.php"
 
 
+def test_derive_api_follows_edituri_for_w_api_php():
+    # Wikipedia/mediawiki.org layout: articles at /wiki/$1, API at /w/api.php.
+    head = (
+        '<html><head>'
+        '<link rel="EditURI" type="application/rsd+xml" '
+        'href="https://en.wikipedia.org/w/api.php?action=rsd"/>'
+        '</head><body>x</body></html>'
+    )
+
+    def fetch(url, timeout=20):
+        return 200, "text/html", head
+
+    assert derive_api("https://en.wikipedia.org/wiki/Apt", fetch=fetch) == \
+        "https://en.wikipedia.org/w/api.php"
+
+
+def test_derive_api_edituri_attribute_order_independent():
+    # Skin/proxy/minifier may emit href before rel; discovery must still work.
+    head = (
+        '<html><head>'
+        '<link type="application/rsd+xml" '
+        'href="https://en.wikipedia.org/w/api.php?action=rsd" rel="EditURI"/>'
+        '</head><body>x</body></html>'
+    )
+
+    def fetch(url, timeout=20):
+        return 200, "text/html", head
+
+    assert derive_api("https://en.wikipedia.org/wiki/Apt", fetch=fetch) == \
+        "https://en.wikipedia.org/w/api.php"
+
+
+def test_derive_api_falls_back_to_root_without_edituri():
+    def fetch(url, timeout=20):
+        return 200, "text/html", "<html><head></head><body>no rsd</body></html>"
+
+    assert derive_api("https://wiki.example.com/wiki/Apt", fetch=fetch) == \
+        "https://wiki.example.com/api.php"
+
+
 def test_siteinfo_and_is_mediawiki():
     fetch = make_fetch([("siteinfo", SITEINFO)])
     info = siteinfo("https://wiki.example.com/api.php", fetch=fetch)

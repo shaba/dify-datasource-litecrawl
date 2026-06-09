@@ -1,16 +1,56 @@
 from __future__ import annotations
 
 import json
-from urllib.parse import quote, urlencode, urlparse
+import re
+from urllib.parse import quote, urlencode, urljoin, urlparse
 
 from .http import Fetch, default_fetch
 
+# api.php is advertised in every MediaWiki page head via <link rel="EditURI">,
+# whose href points at api.php?action=rsd. This is the canonical, layout-agnostic
+# way to locate the API (handles /api.php, /w/api.php, and custom script paths).
+# rel and href are matched independently within the tag so attribute order does
+# not matter (skins/proxies/minifiers may emit href before rel).
+_LINK_TAG = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+_REL_EDITURI = re.compile(r"""\brel=["']?EditURI\b""", re.IGNORECASE)
+_TAG_HREF = re.compile(r"""\bhref=["']?([^"'\s>]+)""", re.IGNORECASE)
 
-def derive_api(base_url: str) -> str:
-    """Resolve the MediaWiki api.php endpoint from a wiki URL."""
+
+def _api_from_html(html: str, base_url: str) -> str | None:
+    for tag in _LINK_TAG.findall(html or ""):
+        if not _REL_EDITURI.search(tag):
+            continue
+        m = _TAG_HREF.search(tag)
+        if not m:
+            continue
+        href = urljoin(base_url, m.group(1).strip()).split("#")[0].split("?")[0]
+        if href.endswith("api.php"):
+            return href
+    return None
+
+
+def derive_api(base_url: str, *, fetch: Fetch | None = None, timeout: int = 20) -> str:
+    """Resolve the MediaWiki api.php endpoint from a wiki URL.
+
+    If the URL already points at api.php, use it. Otherwise, when a ``fetch`` is
+    given, read the page and follow its ``<link rel="EditURI">`` (which advertises
+    api.php) — this handles the common ``/w/api.php`` layout (Wikipedia,
+    mediawiki.org) where articles live under ``/wiki/$1``. Falls back to
+    ``<host>/api.php`` at the root if discovery is unavailable.
+    """
     parsed = urlparse(base_url)
     if parsed.path.rstrip("/").endswith("api.php"):
         return base_url.split("?")[0]
+    if fetch is not None:
+        try:
+            status, _ct, text = fetch(base_url, timeout)
+        except Exception:  # noqa: BLE001 - discovery is best-effort
+            text = ""
+            status = 0
+        if 200 <= status < 300:
+            found = _api_from_html(text, base_url)
+            if found:
+                return found
     return f"{parsed.scheme}://{parsed.netloc}/api.php"
 
 
