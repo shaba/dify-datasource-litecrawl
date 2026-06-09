@@ -38,13 +38,19 @@ def canonical_url(url: str) -> str:
 
 
 def path_matches(path: str, patterns: list[str]) -> bool:
-    """Glob-match a URL path against patterns (firecrawl-style, e.g. 'blog/*')."""
+    """Glob-match a URL path against patterns (firecrawl-style, e.g. 'blog/*').
+
+    A pattern matches the path itself or the path as a directory prefix
+    (``pat`` or ``pat/*``). Bare patterns target a whole path segment, so
+    'blog' matches '/blog' and '/blog/x' but NOT '/blogging'. Use an explicit
+    trailing '*' (e.g. 'blog*') for substring/prefix matching.
+    """
     rel = path.lstrip("/")
     for raw in patterns:
         pat = raw.strip().lstrip("/")
         if not pat:
             continue
-        if fnmatch(rel, pat) or fnmatch(rel, pat + "/*") or fnmatch(rel, pat.rstrip("/") + "*"):
+        if fnmatch(rel, pat) or fnmatch(rel, pat.rstrip("/") + "/*"):
             return True
     return False
 
@@ -56,13 +62,14 @@ def in_scope(
     *,
     include: list[str] | None = None,
     exclude: list[str] | None = None,
+    skip_assets: bool = True,
 ) -> bool:
     parsed = urlparse(url)
     if parsed.netloc != host:
         return False
     if path_prefix and not parsed.path.startswith(path_prefix):
         return False
-    if _ASSET.search(parsed.path):
+    if skip_assets and _ASSET.search(parsed.path):
         return False
     if exclude and path_matches(parsed.path, exclude):
         return False
