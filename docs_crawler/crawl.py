@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .http import Fetch, default_fetch
-from .links import extract_links, in_scope
+from .links import canonical_url, extract_links, in_scope
 
 ExtractFn = Callable[[str, str], dict[str, Any]]
 
@@ -47,7 +47,7 @@ def crawl(
     if path_prefix is None:
         path_prefix = _default_prefix(start_url)
 
-    seen: set[str] = {start_url}
+    seen: set[str] = {canonical_url(start_url)}
     pages: list[Page] = []
     queue: deque[tuple[str, int]] = deque([(start_url, 0)])
 
@@ -73,10 +73,11 @@ def crawl(
 
         if depth < max_depth:
             for link in sorted(extract_links(html, url)):
-                if link not in seen and in_scope(
+                key = canonical_url(link)
+                if key not in seen and in_scope(
                     link, host, path_prefix, include=include, exclude=exclude
                 ):
-                    seen.add(link)
+                    seen.add(key)
                     queue.append((link, depth + 1))
 
     return pages

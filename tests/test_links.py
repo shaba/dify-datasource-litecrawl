@@ -1,4 +1,4 @@
-from docs_crawler.links import extract_links, in_scope
+from docs_crawler.links import canonical_url, extract_links, in_scope
 
 HTML = '''
 <a href="/docs/a/">A</a> <a href="/docs/b/#frag">B</a>
@@ -28,6 +28,14 @@ def test_extract_links_handles_unquoted_href():
                           "https://h.example/docs/")
     assert "https://h.example/docs/a" in links
     assert "https://h.example/docs/b/" in links
+
+
+def test_canonical_url_collapses_trailing_slash_and_case():
+    assert canonical_url("https://H.Example/docs/Page/") == \
+        canonical_url("https://h.example/docs/Page")
+    # root path is preserved, query is kept
+    assert canonical_url("https://h.example") == "https://h.example/"
+    assert canonical_url("https://h.example/p?a=1") == "https://h.example/p?a=1"
 
 
 def test_in_scope_host_prefix_and_assets():

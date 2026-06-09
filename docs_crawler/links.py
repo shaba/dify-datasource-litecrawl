@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from fnmatch import fnmatch
 from html import unescape
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 # Match both quoted (href="...") and unquoted (href=...) attribute forms.
 _HREF = re.compile(r"""href=(?:["']([^"'#]+)|([^"'\s>#]+))""", re.IGNORECASE)
@@ -20,6 +20,21 @@ def extract_links(html: str, base_url: str) -> set[str]:
         if url.startswith(("http://", "https://")):
             out.add(url)
     return out
+
+
+def canonical_url(url: str) -> str:
+    """Normalize a URL for dedup: drop fragment, normalize empty/'/' path and
+    a single trailing slash, lowercase scheme/host.
+
+    Keeps query strings (they can be semantically significant) but collapses
+    ``/docs/page`` and ``/docs/page/`` to one key so the same logical page is not
+    fetched twice. The root path ('' or '/') is preserved as '/'.
+    """
+    p = urlparse(url)
+    path = p.path or "/"
+    if len(path) > 1:
+        path = path.rstrip("/") or "/"
+    return urlunparse((p.scheme.lower(), p.netloc.lower(), path, p.params, p.query, ""))
 
 
 def path_matches(path: str, patterns: list[str]) -> bool:

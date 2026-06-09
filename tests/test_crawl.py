@@ -34,6 +34,21 @@ def test_crawl_respects_max_pages():
     assert len(pages) == 2
 
 
+def test_crawl_dedups_trailing_slash_variants():
+    site = {
+        "https://h.example/docs/": '<a href="/docs/a">a</a> <a href="/docs/a/">a-slash</a>',
+        "https://h.example/docs/a": "<p>a</p>",
+        "https://h.example/docs/a/": "<p>a again</p>",
+    }
+
+    def f(url, timeout=20):
+        return (200, "text/html", site[url]) if url in site else (404, "text/html", "")
+
+    pages = crawl("https://h.example/docs/", extract=extract, fetch=f)
+    # /docs/a and /docs/a/ are the same logical page -> fetched once
+    assert sum(1 for p in pages if p.source_url.rstrip("/") == "https://h.example/docs/a") == 1
+
+
 def test_crawl_respects_max_depth():
     pages = crawl("https://h.example/docs/", extract=extract, fetch=fetch, max_depth=1)
     urls = {p.source_url for p in pages}
