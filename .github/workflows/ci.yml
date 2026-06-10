@@ -41,6 +41,10 @@ jobs:
           curl -fsSL -o "$RUNNER_TEMP/dify-plugin" \
             https://github.com/langgenius/dify-plugin-daemon/releases/download/0.6.1/dify-plugin-linux-amd64
           chmod +x "$RUNNER_TEMP/dify-plugin"
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Package
         run: |
           set -eu
