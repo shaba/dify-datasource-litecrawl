@@ -23,6 +23,19 @@ def find_docs_root(base_url: str, *, fetch: Fetch = default_fetch, timeout: int 
         return base_url
 
     root = f"{parsed.scheme}://{parsed.netloc}"
+
+    # Catch-all guard: SPA docs sites (e.g. VitePress) answer 200 + HTML for ANY
+    # path, so probing /docs/, /wiki/, ... yields false positives that then
+    # mis-scope the crawl. Probe a path that cannot legitimately exist; if it
+    # "succeeds", path probing is unreliable here -- use base_url unchanged and
+    # let the sitemap (or BFS from the root) drive discovery.
+    try:
+        status, content_type, _ = fetch(root + "/litecrawl-nonexistent-probe/", timeout)
+        if 200 <= status < 300 and "html" in content_type.lower():
+            return base_url
+    except Exception:  # noqa: BLE001 - probing, ignore unreachable
+        pass
+
     for candidate in DOC_CANDIDATES:
         url = root + candidate
         try:
@@ -105,3 +118,32 @@ def find_sitemap_urls(base_url: str, *, fetch: Fetch = default_fetch, timeout: i
         if pages:
             break  # first sitemap source that yields pages wins
     return pages
+
+
+def sitemap_pages(
+    base_url: str,
+    *,
+    fetch: Fetch = default_fetch,
+    timeout: int = 20,
+    path_prefix: str | None = None,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
+) -> list[str]:
+    """Sitemap page URLs for ``base_url``, scoped to the same host and to the URL's
+    own directory (or an explicit ``path_prefix``), plus include/exclude globs.
+
+    Scope is derived from ``base_url`` itself -- never from docs-root discovery --
+    so a catch-all SPA that fools ``find_docs_root`` cannot shrink the sitemap to a
+    bogus sub-path. Returns [] when there is no usable sitemap (the caller then
+    falls back to link crawling).
+    """
+    from .crawl import default_path_prefix
+    from .links import in_scope
+
+    host = urlparse(base_url).netloc
+    scope = path_prefix or default_path_prefix(base_url)
+    return [
+        u
+        for u in find_sitemap_urls(base_url, fetch=fetch, timeout=timeout)
+        if in_scope(u, host, scope, include=include, exclude=exclude)
+    ]

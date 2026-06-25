@@ -8,8 +8,8 @@ from dify_plugin.entities.datasource import (
 )
 from dify_plugin.interfaces.datasource.website import WebsiteCrawlDatasource
 
-from docs_crawler.crawl import Page, crawl, default_path_prefix, extract_urls
-from docs_crawler.discover import find_docs_root, find_sitemap_urls
+from docs_crawler.crawl import Page, crawl, extract_urls
+from docs_crawler.discover import find_docs_root, sitemap_pages
 from docs_crawler.extract import extract_page
 from docs_crawler.links import in_scope
 from docs_crawler.mediawiki import (
@@ -112,19 +112,18 @@ class DocsCrawlDatasource(WebsiteCrawlDatasource):
                         content=content,
                     ))
         else:
-            start_url = find_docs_root(url, fetch=fetch) if discover else url
-            host = urlparse(start_url).netloc
-            # Use the same directory-normalized scope as the BFS fallback so a
-            # page-style start URL (e.g. /docs/intro) scopes to /docs/, not to the
-            # literal page path (which would filter out nearly every sitemap entry).
-            scope = path_prefix or default_path_prefix(start_url)
-            sitemap = [
-                u for u in find_sitemap_urls(start_url, fetch=fetch)
-                if in_scope(u, host, scope, include=include, exclude=exclude)
-            ]
+            # Sitemap first, scoped to the user-supplied URL (its own directory or
+            # an explicit path_prefix) -- NOT to a discovered docs root. Discovery
+            # can false-positive on catch-all SPA sites (e.g. VitePress answering
+            # 200 for /wiki/) and would then filter out every real sitemap entry.
+            sitemap = sitemap_pages(
+                url, fetch=fetch, path_prefix=path_prefix, include=include, exclude=exclude
+            )
             if sitemap:
                 pages = extract_urls(sitemap, extract=extract_page, fetch=fetch, max_pages=max_pages)
             else:
+                # No usable sitemap: discover the docs root (for bare domains) and BFS.
+                start_url = find_docs_root(url, fetch=fetch) if discover else url
                 pages = crawl(
                     start_url,
                     extract=extract_page,

@@ -25,3 +25,13 @@ def test_bare_domain_probes_docs():
 def test_bare_domain_fallback_to_base():
     base = "https://x.example"
     assert find_docs_root(base, fetch=make_fetch([])) == base
+
+
+def test_catch_all_spa_returns_base():
+    # A site answering 200 + HTML for ANY path (SPA soft-404, e.g. VitePress) must
+    # not yield a bogus docs root from probing -- base_url is returned unchanged.
+    def fetch(url, timeout=20):
+        return 200, "text/html; charset=utf-8", "<html>spa shell</html>"
+
+    base = "https://spa.example"
+    assert find_docs_root(base, fetch=fetch) == base

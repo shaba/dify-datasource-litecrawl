@@ -1,5 +1,5 @@
 from docs_crawler.crawl import extract_urls
-from docs_crawler.discover import find_sitemap_urls
+from docs_crawler.discover import find_sitemap_urls, sitemap_pages
 from docs_crawler.links import parse_sitemap
 
 SITEMAP = """<?xml version="1.0"?><urlset>
@@ -64,3 +64,43 @@ def test_extract_urls():
         fetch=lambda url, timeout=20: (200, "text/html", "<p>x</p>"),
     )
     assert len(pages) == 1 and pages[0].title == "T"
+
+
+def test_sitemap_pages_scope_from_url_not_discovery():
+    # Catch-all SPA: every path answers 200 + HTML; robots.txt advertises a root
+    # sitemap whose pages live at /apps/... . sitemap_pages scopes by the *given
+    # URL* (root '/'), so all pages pass -- discovery cannot shrink it to a bogus
+    # sub-path (the bug that returned only the start page on VitePress wikis).
+    sm = (
+        '<?xml version="1.0"?><urlset>'
+        "<url><loc>https://wiki.example/apps/a/</loc></url>"
+        "<url><loc>https://wiki.example/apps-gnome/</loc></url>"
+        "</urlset>"
+    )
+
+    def fetch(url, timeout=20):
+        if url.endswith("/robots.txt"):
+            return 200, "text/plain", "Sitemap: https://wiki.example/sitemap.xml\n"
+        if url.endswith("/sitemap.xml"):
+            return 200, "application/xml", sm
+        return 200, "text/html", "<html>spa</html>"  # catch-all
+
+    pages = sitemap_pages("https://wiki.example", fetch=fetch)
+    assert pages == ["https://wiki.example/apps/a/", "https://wiki.example/apps-gnome/"]
+
+
+def test_sitemap_pages_respects_path_prefix():
+    sm = (
+        '<?xml version="1.0"?><urlset>'
+        "<url><loc>https://h.example/docs/a/</loc></url>"
+        "<url><loc>https://h.example/blog/x/</loc></url>"
+        "</urlset>"
+    )
+
+    def fetch(url, timeout=20):
+        if url.endswith("/sitemap.xml"):
+            return 200, "application/xml", sm
+        return 404, "text/html", ""
+
+    pages = sitemap_pages("https://h.example", fetch=fetch, path_prefix="/docs/")
+    assert pages == ["https://h.example/docs/a/"]
