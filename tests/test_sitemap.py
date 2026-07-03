@@ -58,11 +58,11 @@ def test_find_sitemap_index_expands():
 
 
 def test_extract_urls():
-    pages = extract_urls(
+    pages = list(extract_urls(
         ["https://h.example/docs/a/"],
         extract=lambda html, url: {"content": "# x", "title": "T", "description": "D"},
         fetch=lambda url, timeout=20: (200, "text/html", "<p>x</p>"),
-    )
+    ))
     assert len(pages) == 1 and pages[0].title == "T"
 
 

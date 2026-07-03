@@ -99,6 +99,29 @@ parameters:
     description:
       en_US: Link-follow depth from the start URL.
       ru_RU: Глубина перехода по ссылкам от старта.
+  - name: max_concurrency
+    type: number
+    required: false
+    default: 5
+    min: 1
+    max: 16
+    label:
+      en_US: Max concurrent requests
+      ru_RU: Максимум одновременных запросов
+    description:
+      en_US: 'Parallel page fetches for the sitemap path (1 = sequential). Kept low to be polite to the server.'
+      ru_RU: 'Параллельные фетчи страниц на sitemap-пути (1 = последовательно). Держите небольшим, чтобы не перегрузить сервер.'
+  - name: request_delay_ms
+    type: number
+    required: false
+    default: 0
+    min: 0
+    label:
+      en_US: Delay between requests (ms)
+      ru_RU: Задержка между запросами (мс)
+    description:
+      en_US: Optional politeness delay before each request. 0 = no delay.
+      ru_RU: Необязательная задержка перед каждым запросом (вежливость). 0 = без задержки.
 output_schema:
   type: object
   properties:

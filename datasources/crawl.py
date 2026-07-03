@@ -1,4 +1,6 @@
-from collections.abc import Generator, Mapping
+import logging
+import time
+from collections.abc import Generator, Iterator, Mapping
 from typing import Any
 
 from dify_plugin.entities.datasource import (
@@ -8,7 +10,14 @@ from dify_plugin.entities.datasource import (
 )
 from dify_plugin.interfaces.datasource.website import WebsiteCrawlDatasource
 
-from docs_crawler.crawl import Page, crawl, extract_urls
+from docs_crawler.crawl import (
+    CRAWL_TIME_BUDGET,
+    CrawlProgress,
+    Page,
+    crawl,
+    extract_urls,
+    stream_pages,
+)
 from docs_crawler.discover import find_docs_root, sitemap_pages
 from docs_crawler.extract import extract_page
 from docs_crawler.links import in_scope
@@ -24,6 +33,8 @@ from docs_crawler.mediawiki import (
 from urllib.parse import urlparse
 from docs_crawler.http import DEFAULT_UA, default_fetch
 
+logger = logging.getLogger(__name__)
+
 
 class DocsCrawlDatasource(WebsiteCrawlDatasource):
     def _get_website_crawl(
@@ -37,6 +48,10 @@ class DocsCrawlDatasource(WebsiteCrawlDatasource):
         path_prefix = str(datasource_parameters.get("path_prefix") or "").strip() or None
         max_pages = int(datasource_parameters.get("max_pages") or 50)
         max_depth = int(datasource_parameters.get("max_depth") or 5)
+        # Bounded parallel fetch for the sitemap path. Modest default, capped at
+        # 16 so a large sitemap can't be turned into a DoS against the server.
+        max_concurrency = max(1, min(16, int(datasource_parameters.get("max_concurrency") or 5)))
+        request_delay_ms = max(0, int(datasource_parameters.get("request_delay_ms") or 0))
 
         def _csv(name: str) -> list[str]:
             return [p.strip() for p in str(datasource_parameters.get(name) or "").split(",") if p.strip()]
@@ -50,6 +65,11 @@ class DocsCrawlDatasource(WebsiteCrawlDatasource):
 
         def fetch(target: str, timeout: int = 20) -> tuple[int, str, str]:
             return default_fetch(target, timeout, user_agent=user_agent)
+
+        # Time budget: stop fetching before the 300 s request cap so a
+        # partial-but-completed result is always returned (see CRAWL_TIME_BUDGET).
+        now = time.monotonic
+        deadline = now() + CRAWL_TIME_BUDGET
 
         crawl_res = WebSiteInfo(web_info_list=[], status="processing", total=0, completed=0)
         yield self.create_crawl_message(crawl_res)
@@ -88,29 +108,33 @@ class DocsCrawlDatasource(WebsiteCrawlDatasource):
                 titles = list_all_pages(api_url, fetch=fetch, max_pages=max_pages)
             except Exception:  # noqa: BLE001 - emit whatever we have, don't abort mid-stream
                 titles = []
-            pages = []
-            for title in titles:
-                if len(pages) >= max_pages:
-                    break
-                url_for_title = page_url(server, info["articlepath"], title)
-                # path_prefix restricts the wiki crawl too; titles are not asset files.
-                if not in_scope(
-                    url_for_title, host, path_prefix,
-                    include=include, exclude=exclude, skip_assets=False,
-                ):
-                    continue
-                try:
-                    html = fetch_page_html(api_url, title, fetch=fetch)
-                except Exception:  # noqa: BLE001
-                    continue
-                content = html_to_markdown(html)
-                if content.strip():
-                    pages.append(Page(
-                        source_url=url_for_title,
-                        title=title,
-                        description="",
-                        content=content,
-                    ))
+            source_total: int | None = len(titles)
+
+            def mediawiki_pages() -> Iterator[Page]:
+                # Lazy: fetch each article only as it is consumed, so the time
+                # budget can stop the crawl without fetching every remaining page.
+                for title in titles:
+                    url_for_title = page_url(server, info["articlepath"], title)
+                    # path_prefix restricts the wiki crawl too; titles aren't assets.
+                    if not in_scope(
+                        url_for_title, host, path_prefix,
+                        include=include, exclude=exclude, skip_assets=False,
+                    ):
+                        continue
+                    try:
+                        html = fetch_page_html(api_url, title, fetch=fetch)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    content = html_to_markdown(html)
+                    if content.strip():
+                        yield Page(
+                            source_url=url_for_title,
+                            title=title,
+                            description="",
+                            content=content,
+                        )
+
+            page_iter: Iterator[Page] = mediawiki_pages()
         else:
             # Sitemap first, scoped to the user-supplied URL (its own directory or
             # an explicit path_prefix) -- NOT to a discovered docs root. Discovery
@@ -120,11 +144,21 @@ class DocsCrawlDatasource(WebsiteCrawlDatasource):
                 url, fetch=fetch, path_prefix=path_prefix, include=include, exclude=exclude
             )
             if sitemap:
-                pages = extract_urls(sitemap, extract=extract_page, fetch=fetch, max_pages=max_pages)
+                source_total = len(sitemap)
+                page_iter = extract_urls(
+                    sitemap,
+                    extract=extract_page,
+                    fetch=fetch,
+                    max_pages=max_pages,
+                    max_concurrency=max_concurrency,
+                    request_delay_ms=request_delay_ms,
+                )
             else:
                 # No usable sitemap: discover the docs root (for bare domains) and BFS.
+                # Source size is unbounded/unknown -> total is reported as N.
+                source_total = None
                 start_url = find_docs_root(url, fetch=fetch) if discover else url
-                pages = crawl(
+                page_iter = crawl(
                     start_url,
                     extract=extract_page,
                     fetch=fetch,
@@ -135,16 +169,32 @@ class DocsCrawlDatasource(WebsiteCrawlDatasource):
                     max_depth=max_depth,
                 )
 
-        crawl_res.web_info_list = [
-            WebSiteInfoDetail(
-                source_url=page.source_url,
-                content=page.content,
-                title=page.title,
-                description=page.description,
+        # Stream the crawl: emit periodic `processing` progress (only total/
+        # completed are read by Dify for these) and a final `completed` message
+        # whose web_info_list carries the collected pages. The generator is lazy,
+        # so we never fetch or hold more than max_pages + the time budget allows.
+        last: CrawlProgress | None = None
+        for progress in stream_pages(
+            page_iter, source_total=source_total, max_pages=max_pages,
+            now=now, deadline=deadline,
+        ):
+            crawl_res.web_info_list = [
+                WebSiteInfoDetail(
+                    source_url=page.source_url,
+                    content=page.content,
+                    title=page.title,
+                    description=page.description,
+                )
+                for page in progress.web_info
+            ]
+            crawl_res.status = progress.status
+            crawl_res.total = progress.total
+            crawl_res.completed = progress.completed
+            yield self.create_crawl_message(crawl_res)
+            last = progress
+
+        if last is not None and last.capped:
+            logger.info(
+                "litecrawl: capped crawl of %s -- took %d of %d pages (limited by %s)",
+                url, last.completed, last.total, last.reason,
             )
-            for page in pages
-        ]
-        crawl_res.status = "completed"
-        crawl_res.total = len(pages)
-        crawl_res.completed = len(pages)
-        yield self.create_crawl_message(crawl_res)

@@ -20,7 +20,7 @@ def extract(html, url):
 
 
 def test_crawl_in_scope_and_collects_pages():
-    pages = crawl("https://h.example/docs/", extract=extract, fetch=fetch)
+    pages = list(crawl("https://h.example/docs/", extract=extract, fetch=fetch))
     urls = {p.source_url for p in pages}
     assert "https://h.example/docs/" in urls
     assert "https://h.example/docs/a/" in urls
@@ -30,7 +30,7 @@ def test_crawl_in_scope_and_collects_pages():
 
 
 def test_crawl_respects_max_pages():
-    pages = crawl("https://h.example/docs/", extract=extract, fetch=fetch, max_pages=2)
+    pages = list(crawl("https://h.example/docs/", extract=extract, fetch=fetch, max_pages=2))
     assert len(pages) == 2
 
 
@@ -51,13 +51,13 @@ def test_crawl_dedups_trailing_slash_variants():
     def f(url, timeout=20):
         return (200, "text/html", site[url]) if url in site else (404, "text/html", "")
 
-    pages = crawl("https://h.example/docs/", extract=extract, fetch=f)
+    pages = list(crawl("https://h.example/docs/", extract=extract, fetch=f))
     # /docs/a and /docs/a/ are the same logical page -> fetched once
     assert sum(1 for p in pages if p.source_url.rstrip("/") == "https://h.example/docs/a") == 1
 
 
 def test_crawl_respects_max_depth():
-    pages = crawl("https://h.example/docs/", extract=extract, fetch=fetch, max_depth=1)
+    pages = list(crawl("https://h.example/docs/", extract=extract, fetch=fetch, max_depth=1))
     urls = {p.source_url for p in pages}
     assert "https://h.example/docs/a/deep/" not in urls  # depth 2 excluded
     assert "https://h.example/docs/a/" in urls

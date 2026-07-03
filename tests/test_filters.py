@@ -44,7 +44,7 @@ def extract(html, url):
 
 
 def test_crawl_applies_exclude():
-    pages = crawl("https://h.example/docs/", extract=extract, fetch=fetch, exclude=["docs/blog/*"])
+    pages = list(crawl("https://h.example/docs/", extract=extract, fetch=fetch, exclude=["docs/blog/*"]))
     urls = {p.source_url for p in pages}
     assert "https://h.example/docs/keep/" in urls
     assert "https://h.example/docs/blog/skip/" not in urls
