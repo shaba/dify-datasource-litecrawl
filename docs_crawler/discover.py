@@ -78,7 +78,7 @@ def _robots_sitemaps(root: str, fetch: Fetch, timeout: int) -> list[str]:
 
 
 def find_sitemap_urls(base_url: str, *, fetch: Fetch = default_fetch, timeout: int = 20,
-                      max_sitemaps: int = 10) -> list[str]:
+                      max_sitemaps: int = 50) -> list[str]:
     """Return page URLs from the site's sitemap, expanding one level of sitemap-index.
 
     Sitemaps are located via robots.txt ``Sitemap:`` directives (the canonical,

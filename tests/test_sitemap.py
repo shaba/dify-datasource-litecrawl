@@ -57,6 +57,30 @@ def test_find_sitemap_index_expands():
     assert "https://h.example/docs/a/" in urls
 
 
+def test_find_sitemap_index_expands_many_subsitemaps():
+    # A section-split sitemap-index (e.g. manpages: man1-1, man1-2, man2, ... 12+
+    # sub-sitemaps) must be fully expanded -- the old max_sitemaps=10 dropped the
+    # tail (man8/man9), silently missing whole sections.
+    n = 12
+    index = "<sitemapindex>" + "".join(
+        f"<sitemap><loc>https://h.example/sm{i}.xml</loc></sitemap>" for i in range(n)
+    ) + "</sitemapindex>"
+
+    def fetch(url, timeout=20):
+        if url.endswith("/sitemap.xml"):
+            return 200, "application/xml", index
+        for i in range(n):
+            if url.endswith(f"/sm{i}.xml"):
+                return 200, "application/xml", (
+                    f'<urlset><url><loc>https://h.example/p{i}.html</loc></url></urlset>'
+                )
+        return 404, "text/html", ""
+
+    urls = find_sitemap_urls("https://h.example", fetch=fetch)
+    # every sub-sitemap's page is present, including the 11th/12th (past old cap 10)
+    assert {f"https://h.example/p{i}.html" for i in range(n)} == set(urls)
+
+
 def test_extract_urls():
     pages = list(extract_urls(
         ["https://h.example/docs/a/"],
