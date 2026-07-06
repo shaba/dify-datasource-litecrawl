@@ -12,9 +12,10 @@ credentials_schema:
   - name: user_agent
     type: text-input
     required: false
+    default: litecrawl (+https://github.com/shaba/dify-datasource-litecrawl)
     label:
-      en_US: User-Agent (optional)
-      ru_RU: User-Agent (опц.)
+      en_US: User-Agent
+      ru_RU: User-Agent
     placeholder:
       en_US: custom User-Agent header
 provider_type: website_crawl
