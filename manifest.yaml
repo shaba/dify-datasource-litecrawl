@@ -10,6 +10,7 @@ description:
   en_US: "Crawl static documentation sites and wikis (VitePress, MkDocs, Docusaurus, Sphinx, MediaWiki, ...) into clean per-page markdown."
   ru_RU: "Краулер статических докосайтов и вики (VitePress, MkDocs, Docusaurus, Sphinx, MediaWiki, ...) в чистый markdown по страницам."
 icon: icon.svg
+privacy: PRIVACY.md
 tags:
   - rag
 resource:
